@@ -1,0 +1,440 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reaction Time Task</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: white;
+    }
+    .screen {
+      min-height: 100vh;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .screen.active {
+      display: flex;
+    }
+    .card {
+      width: min(720px, 92vw);
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 22px;
+      padding: 28px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.35);
+      backdrop-filter: blur(10px);
+      text-align: center;
+    }
+    h1, h2 { margin-top: 0; }
+    p { line-height: 1.6; color: #e5e7eb; }
+    input {
+      width: min(320px, 80vw);
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: white;
+      margin-top: 8px;
+      font-size: 16px;
+    }
+    button {
+      padding: 12px 18px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 15px;
+      background: #3b82f6;
+      color: white;
+      margin-top: 18px;
+    }
+    button:hover { opacity: 0.95; }
+    .subtle { color: #93c5fd; font-size: 14px; }
+
+    #taskScreen {
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #1e293b 0%, #0f172a 70%);
+    }
+    .hud {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      right: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 20;
+      gap: 12px;
+      pointer-events: none;
+    }
+    .hud-box {
+      background: rgba(15,23,42,0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 14px;
+      padding: 10px 14px;
+      backdrop-filter: blur(8px);
+      font-size: 14px;
+      color: #e5e7eb;
+    }
+    .target {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #fca5a5, #ef4444 60%, #b91c1c 100%);
+      box-shadow: 0 0 24px rgba(239,68,68,0.55);
+      cursor: pointer;
+      display: none;
+      z-index: 10;
+      transition: transform 0.08s ease;
+    }
+    .target:hover {
+      transform: scale(1.04);
+    }
+    .center-message {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+      color: white;
+      z-index: 5;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .small-note {
+      font-size: 14px;
+      color: #cbd5e1;
+      margin-top: 8px;
+    }
+    .chart-wrap {
+      margin-top: 24px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    canvas { background: white; border-radius: 12px; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .stat {
+      background: rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .stat strong { display: block; font-size: 24px; color: #60a5fa; }
+    @media (max-width: 640px) {
+      .stats { grid-template-columns: 1fr; }
+      .target { width: 84px; height: 84px; }
+      .center-message { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <section class="screen active" id="welcomeScreen">
+    <div class="card">
+      <h1>Reaction Time Task</h1>
+      <p>
+        In this task, a circle will appear at random locations on the screen. Click the circle as quickly as you can.
+        The task includes exactly 10 trials.
+      </p>
+      <label for="participantId">Participant ID</label><br />
+      <input id="participantId" type="text" placeholder="Enter ID (optional)" />
+      <div class="subtle">If left blank, a random alphanumeric ID will be assigned automatically.</div>
+      <button id="startTaskBtn">Start Task</button>
+    </div>
+  </section>
+
+  <section class="screen" id="taskScreen">
+    <div class="hud">
+      <div class="hud-box" id="trialDisplay">Trial 0 / 10</div>
+      <div class="hud-box" id="statusDisplay">Get ready...</div>
+    </div>
+    <div class="center-message" id="taskMessage">Click anywhere to begin the first trial.</div>
+    <div class="target" id="target" aria-label="reaction target"></div>
+  </section>
+
+  <section class="screen" id="resultScreen">
+    <div class="card">
+      <h2>Task Complete</h2>
+      <p>Your results have been recorded. Below is the distribution of historical reaction times, along with your average reaction time.</p>
+      <div class="stats">
+        <div class="stat"><span>Your ID</span><strong id="finalId">-</strong></div>
+        <div class="stat"><span>Your Average RT</span><strong id="finalAvg">-</strong></div>
+        <div class="stat"><span>Total Trials</span><strong id="finalTrials">10</strong></div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="histogramChart" width="640" height="360"></canvas>
+      </div>
+      <p class="small-note" id="resultNote">Loading historical data...</p>
+    </div>
+  </section>
+
+  <script>
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwrXNdqKV-M0v0xrVt4x_KdbBJn4JLXiy-cI1bz804i0bqc34HhOwu-ZekmYfwx5so/exec";
+    const TOTAL_TRIALS = 10;
+    const TARGET_DIAMETER = 100;
+    const REAPPEAR_DELAY_MS = 500;
+
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    const taskScreen = document.getElementById('taskScreen');
+    const resultScreen = document.getElementById('resultScreen');
+    const participantIdInput = document.getElementById('participantId');
+    const startTaskBtn = document.getElementById('startTaskBtn');
+    const taskMessage = document.getElementById('taskMessage');
+    const target = document.getElementById('target');
+    const trialDisplay = document.getElementById('trialDisplay');
+    const statusDisplay = document.getElementById('statusDisplay');
+    const finalId = document.getElementById('finalId');
+    const finalAvg = document.getElementById('finalAvg');
+    const finalTrials = document.getElementById('finalTrials');
+    const resultNote = document.getElementById('resultNote');
+
+    let participantId = '';
+    let currentTrial = 0;
+    let reactionTimes = [];
+    let trialStartTime = 0;
+    let targetVisible = false;
+    let chartInstance = null;
+
+    function showScreen(screen) {
+      [welcomeScreen, taskScreen, resultScreen].forEach(s => s.classList.remove('active'));
+      screen.classList.add('active');
+    }
+
+    function generateParticipantId() {
+      return 'P' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    }
+
+    function updateHud() {
+      trialDisplay.textContent = `Trial ${currentTrial} / ${TOTAL_TRIALS}`;
+      statusDisplay.textContent = targetVisible ? 'Click the circle now!' : 'Waiting for next circle...';
+    }
+
+    function getRandomPosition() {
+      const padding = 10;
+      const maxX = window.innerWidth - TARGET_DIAMETER - padding;
+      const maxY = window.innerHeight - TARGET_DIAMETER - padding;
+      const minX = padding;
+      const minY = 90;
+      return {
+        x: Math.max(minX, Math.floor(Math.random() * Math.max(1, maxX - minX))),
+        y: Math.max(minY, Math.floor(Math.random() * Math.max(1, maxY - minY)))
+      };
+    }
+
+    function placeTarget() {
+      const { x, y } = getRandomPosition();
+      target.style.left = `${x}px`;
+      target.style.top = `${y}px`;
+      target.style.display = 'block';
+      targetVisible = true;
+      trialStartTime = performance.now();
+      taskMessage.style.display = 'none';
+      updateHud();
+    }
+
+    function hideTarget() {
+      target.style.display = 'none';
+      targetVisible = false;
+      updateHud();
+    }
+
+    async function postTrialData(trialNumber, rt) {
+      const payload = {
+        Participant_ID: participantId,
+        Trial_Number: trialNumber,
+        Reaction_Time: Math.round(rt)
+      };
+
+      try {
+        await fetch(WEB_APP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (error) {
+        console.error('POST failed:', error);
+      }
+    }
+
+    async function handleTargetClick() {
+      if (!targetVisible) return;
+
+      const rt = performance.now() - trialStartTime;
+      reactionTimes.push(rt);
+      const completedTrial = currentTrial;
+      hideTarget();
+      statusDisplay.textContent = `Recorded: ${Math.round(rt)} ms`;
+      await postTrialData(completedTrial, rt);
+
+      if (completedTrial >= TOTAL_TRIALS) {
+        setTimeout(showResults, 500);
+        return;
+      }
+
+      setTimeout(() => {
+        currentTrial += 1;
+        placeTarget();
+      }, REAPPEAR_DELAY_MS);
+    }
+
+    function startExperiment() {
+      participantId = participantIdInput.value.trim() || generateParticipantId();
+      currentTrial = 1;
+      reactionTimes = [];
+      finalTrials.textContent = String(TOTAL_TRIALS);
+      showScreen(taskScreen);
+      taskMessage.textContent = 'Get ready...';
+      updateHud();
+      setTimeout(placeTarget, 700);
+    }
+
+    function average(values) {
+      if (!values.length) return 0;
+      return values.reduce((sum, v) => sum + v, 0) / values.length;
+    }
+
+    function buildHistogramData(values, binSize = 50) {
+      const clean = values.filter(v => Number.isFinite(v) && v >= 0);
+      if (!clean.length) {
+        return { labels: [], counts: [] };
+      }
+      const maxValue = Math.max(...clean);
+      const binCount = Math.max(1, Math.ceil((maxValue + 1) / binSize));
+      const counts = new Array(binCount).fill(0);
+
+      clean.forEach(value => {
+        const index = Math.min(binCount - 1, Math.floor(value / binSize));
+        counts[index] += 1;
+      });
+
+      const labels = counts.map((_, i) => `${i * binSize}-${(i + 1) * binSize - 1}`);
+      return { labels, counts };
+    }
+
+    function createAverageLinePlugin(avgRt, binSize = 50) {
+      return {
+        id: 'averageLinePlugin',
+        afterDatasetsDraw(chart) {
+          const { ctx, chartArea, scales } = chart;
+          if (!chartArea || !scales.x) return;
+          const xValue = avgRt / binSize;
+          const xPixel = scales.x.getPixelForValue(xValue);
+          if (!Number.isFinite(xPixel)) return;
+
+          ctx.save();
+          ctx.strokeStyle = '#f97316';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(xPixel, chartArea.top);
+          ctx.lineTo(xPixel, chartArea.bottom);
+          ctx.stroke();
+          ctx.fillStyle = '#f97316';
+          ctx.font = '12px Segoe UI';
+          ctx.fillText('Your Avg RT', xPixel + 6, chartArea.top + 16);
+          ctx.restore();
+        }
+      };
+    }
+
+    async function fetchHistoricalReactionTimes() {
+      try {
+        const response = await fetch(WEB_APP_URL, { method: 'GET' });
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          return data.map(Number).filter(v => Number.isFinite(v));
+        }
+      } catch (error) {
+        console.error('GET failed:', error);
+      }
+      return [];
+    }
+
+    async function showResults() {
+      showScreen(resultScreen);
+      finalId.textContent = participantId;
+      const avgRt = Math.round(average(reactionTimes));
+      finalAvg.textContent = `${avgRt} ms`;
+
+      const historical = await fetchHistoricalReactionTimes();
+      const allValues = historical.length ? historical : reactionTimes.map(Math.round);
+      const { labels, counts } = buildHistogramData(allValues, 50);
+      const ctx = document.getElementById('histogramChart').getContext('2d');
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Historical Reaction Times',
+            data: counts,
+            backgroundColor: 'rgba(59,130,246,0.75)',
+            borderColor: 'rgba(37,99,235,1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: 'Reaction Time Bins (ms)' }
+            },
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: 'Frequency' }
+            }
+          }
+        },
+        plugins: [createAverageLinePlugin(avgRt, 50)]
+      });
+
+      resultNote.textContent = historical.length
+        ? 'Historical reaction times loaded successfully.'
+        : 'No historical data were available, so the chart is using current-session data.';
+    }
+
+    function runSelfTests() {
+      console.assert(typeof generateParticipantId === 'function', 'generateParticipantId should exist');
+      console.assert(typeof postTrialData === 'function', 'postTrialData should exist');
+      console.assert(buildHistogramData([100, 120, 180], 50).counts.reduce((a,b)=>a+b,0) === 3, 'Histogram should count all observations');
+      console.assert(average([100, 200, 300]) === 200, 'Average should be correct');
+    }
+
+    startTaskBtn.addEventListener('click', startExperiment);
+    target.addEventListener('click', handleTargetClick);
+    window.addEventListener('resize', () => {
+      if (targetVisible) {
+        const pos = getRandomPosition();
+        target.style.left = `${pos.x}px`;
+        target.style.top = `${pos.y}px`;
+      }
+    });
+
+    runSelfTests();
+  </script>
+</body>
+</html>
